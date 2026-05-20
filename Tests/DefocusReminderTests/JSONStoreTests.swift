@@ -47,8 +47,20 @@ final class JSONStoreTests: XCTestCase {
 
         XCTAssertEqual(snapshot.config.workMinutes, 50)
         XCTAssertEqual(snapshot.config.healthProfile.profession, .general)
+        XCTAssertEqual(snapshot.config.menuBarDisplayMode, .iconAndText)
+        XCTAssertNil(snapshot.config.remindersPausedUntil)
         XCTAssertEqual(snapshot.summaries.first?.workSeconds, 0)
         XCTAssertEqual(snapshot.summaries.first?.completedBreaks, 0)
+    }
+
+    func testMenuBarDisplayModePersists() throws {
+        let url = tempURL()
+        let config = AppConfig(menuBarDisplayMode: .iconOnly)
+
+        try JSONStore(fileURL: url).save(AppSnapshot(config: config))
+        let snapshot = JSONStore(fileURL: url).load()
+
+        XCTAssertEqual(snapshot.config.menuBarDisplayMode, .iconOnly)
     }
 
     private func tempURL() -> URL {

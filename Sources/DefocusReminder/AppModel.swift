@@ -10,6 +10,7 @@ public final class AppModel: ObservableObject {
     @Published private(set) var currentRecommendation: RestRecommendation
 
     private let store: JSONStore
+    private let nowProvider: () -> Date
     private let presenter = ReminderPresenter()
     private var timer: Timer?
     private var ticksSinceSave = 0
@@ -18,12 +19,13 @@ public final class AppModel: ObservableObject {
         self.init(store: JSONStore())
     }
 
-    init(store: JSONStore) {
+    init(store: JSONStore, nowProvider: @escaping () -> Date = Date.init) {
         self.store = store
+        self.nowProvider = nowProvider
         let snapshot = store.load()
         let loadedConfig = snapshot.config
         let loadedSummaries = snapshot.summaries.sorted { $0.date < $1.date }
-        let isWorkTime = SchedulePolicy.isWithinWorkSchedule(at: Date(), config: loadedConfig)
+        let isWorkTime = SchedulePolicy.isWithinWorkSchedule(at: nowProvider(), config: loadedConfig)
 
         config = loadedConfig
         summaries = loadedSummaries
@@ -51,8 +53,12 @@ public final class AppModel: ObservableObject {
         config.language
     }
 
+    public var menuBarDisplayMode: MenuBarDisplayMode {
+        config.menuBarDisplayMode
+    }
+
     var isWorkTimeNow: Bool {
-        SchedulePolicy.isWithinWorkSchedule(at: Date(), config: config)
+        SchedulePolicy.isWithinWorkSchedule(at: nowProvider(), config: config)
     }
 
     var formattedRemaining: String {
@@ -60,6 +66,10 @@ public final class AppModel: ObservableObject {
     }
 
     public var menuBarTitle: String {
+        if isRemindersPaused {
+            return L.s("今日暂停", "Paused today", language)
+        }
+
         switch engine.phase {
         case .offDuty:
             return L.phase(.offDuty, language)
@@ -78,14 +88,35 @@ public final class AppModel: ObservableObject {
     }
 
     var todaySummary: DailySummary {
-        let today = DateKeys.dayString()
+        let today = DateKeys.dayString(for: nowProvider())
         return summaries.first(where: { $0.date == today }) ?? DailySummary(date: today)
+    }
+
+    var isRemindersPaused: Bool {
+        guard let until = config.remindersPausedUntil else { return false }
+        return until > nowProvider()
+    }
+
+    public var menuBarStatusIcon: String {
+        if isRemindersPaused { return "pause.circle.fill" }
+        switch engine.phase {
+        case .offDuty:
+            return "moon.zzz.fill"
+        case .working:
+            return "timer"
+        case .breakPrompt:
+            return engine.promptKind == .finishBreak ? "checkmark.circle.fill" : "bell.badge.fill"
+        case .breaking:
+            return "cup.and.saucer.fill"
+        case .paused:
+            return "pause.circle.fill"
+        }
     }
 
     public func start() {
         guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+            Task { @MainActor in self?.tickOnce() }
         }
     }
 
@@ -93,7 +124,7 @@ public final class AppModel: ObservableObject {
         mutate(&config)
         engine.applyConfig(config)
         refreshRecommendation()
-        if config.reminderMode == .menu {
+        if config.reminderMode == .menu || isRemindersPaused {
             presenter.hide()
         } else if engine.phase == .breakPrompt || engine.phase == .breaking {
             presenter.show(model: self)
@@ -115,7 +146,7 @@ public final class AppModel: ObservableObject {
     }
 
     func requestBreakNow() {
-        guard engine.phase == .working || engine.phase == .paused else { return }
+        guard !isRemindersPaused, engine.phase == .working || engine.phase == .paused else { return }
         engine.requestBreak()
         refreshRecommendation()
         showReminderIfNeeded()
@@ -123,7 +154,7 @@ public final class AppModel: ObservableObject {
     }
 
     func startBreak() {
-        guard engine.phase == .breakPrompt, engine.promptKind == .startBreak else { return }
+        guard !isRemindersPaused, engine.phase == .breakPrompt, engine.promptKind == .startBreak else { return }
         engine.startBreak(config: config)
         refreshRecommendation()
         showReminderIfNeeded()
@@ -147,6 +178,9 @@ public final class AppModel: ObservableObject {
     }
 
     func resetCycle() {
+        if config.remindersPausedUntil != nil {
+            config.remindersPausedUntil = nil
+        }
         presenter.hide()
         if isWorkTimeNow {
             engine.startWork(config: config)
@@ -156,8 +190,32 @@ public final class AppModel: ObservableObject {
         persist(force: true)
     }
 
+    func snoozeBreak(minutes: Int = 5) {
+        guard engine.phase == .breakPrompt, engine.promptKind == .startBreak else { return }
+        presenter.hide()
+        engine.snoozeBreak(seconds: minutes * 60)
+        persist(force: true)
+    }
+
+    func pauseRemindersForToday() {
+        let now = nowProvider()
+        let tomorrow = Calendar.current.date(
+            byAdding: .day,
+            value: 1,
+            to: Calendar.current.startOfDay(for: now)
+        ) ?? now.addingTimeInterval(24 * 60 * 60)
+        config.remindersPausedUntil = tomorrow
+        presenter.hide()
+        persist(force: true)
+    }
+
+    func resumeReminders() {
+        config.remindersPausedUntil = nil
+        resetCycle()
+    }
+
     func summariesForLastDays(_ days: Int, calendar: Calendar = .current) -> [DailySummary] {
-        let today = Date()
+        let today = nowProvider()
         let map = Dictionary(uniqueKeysWithValues: summaries.map { ($0.date, $0) })
         return stride(from: days - 1, through: 0, by: -1).compactMap { offset in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else {
@@ -178,8 +236,16 @@ public final class AppModel: ObservableObject {
         try? store.save(snapshot)
     }
 
-    private func tick() {
-        let isWorkTime = SchedulePolicy.isWithinWorkSchedule(at: Date(), config: config)
+    func tickOnce() {
+        clearExpiredReminderPause()
+        if isRemindersPaused {
+            presenter.hide()
+            persist()
+            return
+        }
+
+        let now = nowProvider()
+        let isWorkTime = SchedulePolicy.isWithinWorkSchedule(at: now, config: config)
         let previousPhase = engine.phase
         let activityDetected = config.activityDetectionEnabled
             && previousPhase == .breaking
@@ -215,36 +281,47 @@ public final class AppModel: ObservableObject {
     }
 
     private func refreshRecommendation() {
-        let seed = todaySummary.completedBreaks + todaySummary.skippedBreaks + todaySummary.workSeconds / 60
+        let seed = Int.random(in: 0..<10_000)
         currentRecommendation = RecommendationEngine.recommendation(
             for: config.healthProfile,
             durationSeconds: config.breakDurationSeconds,
             language: config.language,
-            seed: seed
+            seed: seed,
+            avoiding: currentRecommendation.id
         )
     }
 
     private func showReminderIfNeeded() {
+        guard !isRemindersPaused else {
+            presenter.hide()
+            return
+        }
+
         if config.reminderMode == .floating {
             presenter.show(model: self)
         } else {
             presenter.hide()
-            NSApp.activate(ignoringOtherApps: true)
+            NSApplication.shared.activate(ignoringOtherApps: true)
         }
     }
 
     private func mutateToday(_ mutate: (inout DailySummary) -> Void) {
-        let today = DateKeys.dayString()
+        let today = DateKeys.dayString(for: nowProvider())
         if let index = summaries.firstIndex(where: { $0.date == today }) {
             mutate(&summaries[index])
-            summaries[index].updatedAt = Date()
+            summaries[index].updatedAt = nowProvider()
         } else {
             var summary = DailySummary(date: today)
             mutate(&summary)
-            summary.updatedAt = Date()
+            summary.updatedAt = nowProvider()
             summaries.append(summary)
             summaries.sort { $0.date < $1.date }
         }
+    }
+
+    private func clearExpiredReminderPause() {
+        guard let until = config.remindersPausedUntil, until <= nowProvider() else { return }
+        config.remindersPausedUntil = nil
     }
 
     static func formatClock(_ seconds: Int) -> String {

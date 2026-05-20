@@ -106,6 +106,14 @@ struct TimerEngine: Equatable {
         pausedPromptKind = nil
     }
 
+    mutating func snoozeBreak(seconds: Int) {
+        phase = .working
+        remainingSeconds = max(1, seconds)
+        promptKind = nil
+        pausedPhase = nil
+        pausedPromptKind = nil
+    }
+
     mutating func startBreak(config: AppConfig) {
         phase = .breaking
         currentBreakTotalSeconds = config.breakDurationSeconds

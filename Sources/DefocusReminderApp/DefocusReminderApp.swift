@@ -66,8 +66,19 @@ struct MenuBarStatusView: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        Text(model.menuBarTitle)
-            .monospacedDigit()
+        switch model.menuBarDisplayMode {
+        case .iconAndText:
+            HStack(spacing: 4) {
+                Image(systemName: model.menuBarStatusIcon)
+                Text(model.menuBarTitle)
+                    .monospacedDigit()
+            }
+        case .iconOnly:
+            Image(systemName: model.menuBarStatusIcon)
+        case .textOnly:
+            Text(model.menuBarTitle)
+                .monospacedDigit()
+        }
     }
 }
 

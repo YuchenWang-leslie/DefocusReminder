@@ -24,6 +24,25 @@ enum ReminderMode: String, Codable, CaseIterable, Identifiable, Equatable, Hasha
     }
 }
 
+public enum MenuBarDisplayMode: String, Codable, CaseIterable, Identifiable, Equatable, Hashable {
+    case iconAndText
+    case iconOnly
+    case textOnly
+
+    public var id: String { rawValue }
+
+    func label(language: AppLanguage) -> String {
+        switch self {
+        case .iconAndText:
+            return L.s("图标 + 倒计时", "Icon + timer", language)
+        case .iconOnly:
+            return L.s("仅图标", "Icon only", language)
+        case .textOnly:
+            return L.s("仅文字", "Text only", language)
+        }
+    }
+}
+
 public enum AppLanguage: String, Codable, CaseIterable, Identifiable, Equatable, Hashable {
     case system
     case zh
@@ -120,9 +139,11 @@ struct AppConfig: Codable, Equatable {
     var workMinutes: Int
     var breakMinutes: Int
     var reminderMode: ReminderMode
+    var menuBarDisplayMode: MenuBarDisplayMode
     var language: AppLanguage
     var healthProfile: HealthProfile
     var activityDetectionEnabled: Bool
+    var remindersPausedUntil: Date?
 
     init(
         workDays: Set<Int> = [2, 3, 4, 5, 6],
@@ -131,9 +152,11 @@ struct AppConfig: Codable, Equatable {
         workMinutes: Int = 50,
         breakMinutes: Int = 5,
         reminderMode: ReminderMode = .floating,
+        menuBarDisplayMode: MenuBarDisplayMode = .iconAndText,
         language: AppLanguage = .system,
         healthProfile: HealthProfile = HealthProfile(),
-        activityDetectionEnabled: Bool = false
+        activityDetectionEnabled: Bool = false,
+        remindersPausedUntil: Date? = nil
     ) {
         self.workDays = workDays
         self.workStartTime = workStartTime
@@ -141,9 +164,11 @@ struct AppConfig: Codable, Equatable {
         self.workMinutes = workMinutes
         self.breakMinutes = breakMinutes
         self.reminderMode = reminderMode
+        self.menuBarDisplayMode = menuBarDisplayMode
         self.language = language
         self.healthProfile = healthProfile
         self.activityDetectionEnabled = activityDetectionEnabled
+        self.remindersPausedUntil = remindersPausedUntil
     }
 
     init(from decoder: Decoder) throws {
@@ -155,9 +180,11 @@ struct AppConfig: Codable, Equatable {
         workMinutes = try container.decodeIfPresent(Int.self, forKey: .workMinutes) ?? defaults.workMinutes
         breakMinutes = try container.decodeIfPresent(Int.self, forKey: .breakMinutes) ?? defaults.breakMinutes
         reminderMode = try container.decodeIfPresent(ReminderMode.self, forKey: .reminderMode) ?? defaults.reminderMode
+        menuBarDisplayMode = try container.decodeIfPresent(MenuBarDisplayMode.self, forKey: .menuBarDisplayMode) ?? defaults.menuBarDisplayMode
         language = try container.decodeIfPresent(AppLanguage.self, forKey: .language) ?? defaults.language
         healthProfile = try container.decodeIfPresent(HealthProfile.self, forKey: .healthProfile) ?? defaults.healthProfile
         activityDetectionEnabled = try container.decodeIfPresent(Bool.self, forKey: .activityDetectionEnabled) ?? defaults.activityDetectionEnabled
+        remindersPausedUntil = try container.decodeIfPresent(Date.self, forKey: .remindersPausedUntil) ?? defaults.remindersPausedUntil
     }
 
     var workDurationSeconds: Int {
