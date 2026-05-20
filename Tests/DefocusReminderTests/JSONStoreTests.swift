@@ -52,8 +52,12 @@ final class JSONStoreTests: XCTestCase {
     }
 
     private func tempURL() -> URL {
-        FileManager.default.temporaryDirectory
+        let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("DefocusReminderTests-\(UUID().uuidString)")
+
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        return directory
             .appendingPathComponent("state.json")
     }
 }

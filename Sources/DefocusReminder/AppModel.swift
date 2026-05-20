@@ -19,20 +19,20 @@ public final class AppModel: ObservableObject {
     }
 
     init(store: JSONStore) {
-    self.store = store
-    let snapshot = store.load()
-    let loadedConfig = snapshot.config
-    let loadedSummaries = snapshot.summaries.sorted { $0.date < $1.date }
-    let isWorkTime = SchedulePolicy.isWithinWorkSchedule(at: Date(), config: loadedConfig)
+        self.store = store
+        let snapshot = store.load()
+        let loadedConfig = snapshot.config
+        let loadedSummaries = snapshot.summaries.sorted { $0.date < $1.date }
+        let isWorkTime = SchedulePolicy.isWithinWorkSchedule(at: Date(), config: loadedConfig)
 
-    config = loadedConfig
-    summaries = loadedSummaries
-    engine = TimerEngine(config: loadedConfig, isWorkTime: isWorkTime)
-    currentRecommendation = RecommendationEngine.recommendation(
-        for: loadedConfig.healthProfile,
-        durationSeconds: loadedConfig.breakDurationSeconds,
-        language: loadedConfig.language
-    )
+        config = loadedConfig
+        summaries = loadedSummaries
+        engine = TimerEngine(config: loadedConfig, isWorkTime: isWorkTime)
+        currentRecommendation = RecommendationEngine.recommendation(
+            for: loadedConfig.healthProfile,
+            durationSeconds: loadedConfig.breakDurationSeconds,
+            language: loadedConfig.language
+        )
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
