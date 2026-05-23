@@ -50,6 +50,36 @@ final class AppModelExperienceTests: XCTestCase {
         XCTAssertEqual(model.todaySummary.skippedBreaks, 0)
     }
 
+    func testSystemSessionPauseStopsAndResumesEffectiveWorkTimer() async throws {
+        let now = date(2026, 5, 20, 2, 0)
+        let config = AppConfig(
+            workDays: [4],
+            workStartTime: "09:00",
+            workEndTime: "18:00",
+            reminderMode: .menu
+        )
+        let store = JSONStore(fileURL: tempURL())
+        try store.save(AppSnapshot(config: config))
+        let model = AppModel(store: store, nowProvider: { now })
+        let startingSeconds = model.engine.remainingSeconds
+
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+        await Task.yield()
+
+        XCTAssertEqual(model.engine.phase, .paused)
+        model.tickOnce()
+        XCTAssertEqual(model.engine.remainingSeconds, startingSeconds)
+        XCTAssertEqual(model.todaySummary.workSeconds, 0)
+
+        NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+        await Task.yield()
+
+        XCTAssertEqual(model.engine.phase, .working)
+        model.tickOnce()
+        XCTAssertEqual(model.engine.remainingSeconds, startingSeconds - 1)
+        XCTAssertEqual(model.todaySummary.workSeconds, 1)
+    }
+
     private func tempURL() -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("DefocusReminderTests-\(UUID().uuidString)")

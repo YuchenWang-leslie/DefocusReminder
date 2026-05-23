@@ -14,6 +14,9 @@ public final class AppModel: ObservableObject {
     private let presenter = ReminderPresenter()
     private var timer: Timer?
     private var ticksSinceSave = 0
+    private var notificationTokens: [NSObjectProtocol] = []
+    private var workspaceNotificationTokens: [NSObjectProtocol] = []
+    private var systemPauseActive = false
 
     public convenience init() {
         self.init(store: JSONStore())
@@ -36,17 +39,26 @@ public final class AppModel: ObservableObject {
             language: loadedConfig.language
         )
 
-        NotificationCenter.default.addObserver(
+        notificationTokens.append(NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.persist(force: true) }
-        }
+        })
+
+        installSystemPauseObservers()
     }
 
     deinit {
         timer?.invalidate()
+        for token in notificationTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        for token in workspaceNotificationTokens {
+            workspaceCenter.removeObserver(token)
+        }
     }
 
     public var language: AppLanguage {
@@ -133,6 +145,7 @@ public final class AppModel: ObservableObject {
     }
 
     func pauseOrResume() {
+        systemPauseActive = false
         if engine.phase == .paused {
             engine.resume()
             if config.reminderMode == .floating, engine.phase == .breakPrompt || engine.phase == .breaking {
@@ -322,6 +335,77 @@ public final class AppModel: ObservableObject {
     private func clearExpiredReminderPause() {
         guard let until = config.remindersPausedUntil, until <= nowProvider() else { return }
         config.remindersPausedUntil = nil
+    }
+
+    private func installSystemPauseObservers() {
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        let pauseNotifications: [Notification.Name] = [
+            NSWorkspace.willSleepNotification,
+            NSWorkspace.screensDidSleepNotification,
+            NSWorkspace.sessionDidResignActiveNotification,
+        ]
+        let resumeNotifications: [Notification.Name] = [
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.screensDidWakeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification,
+        ]
+
+        for name in pauseNotifications {
+            workspaceNotificationTokens.append(workspaceCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.pauseForSystemInactivity() }
+            })
+        }
+
+        for name in resumeNotifications {
+            workspaceNotificationTokens.append(workspaceCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.resumeAfterSystemInactivity() }
+            })
+        }
+    }
+
+    private func pauseForSystemInactivity() {
+        guard !systemPauseActive else { return }
+        guard engine.phase == .working || engine.phase == .breaking || engine.phase == .breakPrompt else {
+            persist(force: true)
+            return
+        }
+
+        engine.pause()
+        systemPauseActive = true
+        presenter.hide()
+        persist(force: true)
+    }
+
+    private func resumeAfterSystemInactivity() {
+        guard systemPauseActive else { return }
+        systemPauseActive = false
+
+        if isRemindersPaused {
+            presenter.hide()
+            persist(force: true)
+            return
+        }
+
+        if isWorkTimeNow {
+            engine.resume()
+            if engine.phase == .breakPrompt || engine.phase == .breaking {
+                showReminderIfNeeded()
+            } else {
+                presenter.hide()
+            }
+        } else {
+            engine.enterOffDuty()
+            presenter.hide()
+        }
+        persist(force: true)
     }
 
     static func formatClock(_ seconds: Int) -> String {
