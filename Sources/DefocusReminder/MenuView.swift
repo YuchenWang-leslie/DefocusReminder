@@ -20,7 +20,9 @@ public struct MenuPanelView: View {
             header
             timerCircle
 
-            if model.engine.phase == .breakPrompt || model.engine.phase == .breaking {
+            if model.isRemindersPaused {
+                pauseCard
+            } else if model.engine.phase == .breakPrompt || model.engine.phase == .breaking {
                 recommendationCard
             } else {
                 todayCard
@@ -32,6 +34,17 @@ public struct MenuPanelView: View {
         }
         .padding(16)
         .frame(width: 280)
+        .preferredColorScheme(.dark)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(red: 0.09, green: 0.10, blue: 0.13),
+                    Color(red: 0.13, green: 0.14, blue: 0.18),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
     }
 
     private var header: some View {
@@ -39,9 +52,10 @@ public struct MenuPanelView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("DefocusReminder")
                     .font(.headline)
+                    .foregroundStyle(.white)
                 Text(statusLine)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.66))
             }
             Spacer()
             Circle()
@@ -62,9 +76,10 @@ public struct MenuPanelView: View {
                 Text(mainTimeText)
                     .font(.system(size: 30, weight: .light, design: .monospaced))
                     .monospacedDigit()
+                    .foregroundStyle(.white)
                 Text(L.phase(model.engine.phase, model.language))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.66))
             }
         }
         .frame(width: 132, height: 132)
@@ -90,59 +105,88 @@ public struct MenuPanelView: View {
     private var recommendationCard: some View {
         HStack(alignment: .top, spacing: 9) {
             Image(systemName: model.currentRecommendation.icon)
-                .foregroundStyle(.green)
+                .foregroundStyle(.mint)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.currentRecommendation.title(language: model.language))
                     .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
                 Text(model.currentRecommendation.detail(language: model.language))
                     .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.white.opacity(0.70))
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
         .padding(10)
-        .background(.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var pauseCard: some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "pause.circle.fill")
+                .foregroundStyle(.purple)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L.s("今日提醒已暂停", "Reminders paused today", model.language))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(L.s("明天会自动恢复，也可以现在手动恢复。", "They resume tomorrow, or you can resume now.", model.language))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.70))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var controls: some View {
         VStack(spacing: 8) {
-            switch model.engine.phase {
-            case .offDuty:
-                Button(L.s("重新检查排班", "Check schedule", model.language)) {
-                    model.resetCycle()
+            if model.isRemindersPaused {
+                Button(L.s("恢复提醒", "Resume reminders", model.language)) {
+                    model.resumeReminders()
                 }
-                .buttonStyle(.bordered)
-            case .working:
-                HStack {
-                    Button(L.s("暂停", "Pause", model.language)) { model.pauseOrResume() }
-                    Button(L.s("立即休息", "Rest now", model.language)) { model.requestBreakNow() }
-                        .buttonStyle(.borderedProminent)
-                }
-            case .paused:
-                HStack {
-                    Button(L.s("继续", "Resume", model.language)) { model.pauseOrResume() }
-                        .buttonStyle(.borderedProminent)
-                    Button(L.s("重置", "Reset", model.language)) { model.resetCycle() }
-                }
-            case .breakPrompt:
-                if model.engine.promptKind == .finishBreak {
-                    Button(L.s("我回来了", "I'm back", model.language)) { model.finishBreak() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.green)
-                } else {
+                .buttonStyle(.borderedProminent)
+                .tint(.purple)
+            } else {
+                switch model.engine.phase {
+                case .offDuty:
+                    Button(L.s("重新检查排班", "Check schedule", model.language)) {
+                        model.resetCycle()
+                    }
+                    .buttonStyle(.bordered)
+                case .working:
                     HStack {
-                        Button(L.s("开始休息", "Start break", model.language)) { model.startBreak() }
+                        Button(L.s("今日暂停", "Pause today", model.language)) { model.pauseRemindersForToday() }
+                        Button(L.s("立即休息", "Rest now", model.language)) { model.requestBreakNow() }
                             .buttonStyle(.borderedProminent)
-                            .tint(.orange)
+                    }
+                case .paused:
+                    HStack {
+                        Button(L.s("继续", "Resume", model.language)) { model.pauseOrResume() }
+                            .buttonStyle(.borderedProminent)
+                        Button(L.s("重置", "Reset", model.language)) { model.resetCycle() }
+                    }
+                case .breakPrompt:
+                    if model.engine.promptKind == .finishBreak {
+                        Button(L.s("我回来了", "I'm back", model.language)) { model.finishBreak() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.green)
+                    } else {
+                        HStack {
+                            Button(L.s("开始休息", "Start break", model.language)) { model.startBreak() }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.orange)
+                            Button(L.s("稍后", "Later", model.language)) { model.snoozeBreak() }
+                            Button(L.s("跳过", "Skip", model.language)) { model.skipBreak() }
+                        }
+                    }
+                case .breaking:
+                    HStack {
+                        Button(L.s("暂停", "Pause", model.language)) { model.pauseOrResume() }
                         Button(L.s("跳过", "Skip", model.language)) { model.skipBreak() }
                     }
-                }
-            case .breaking:
-                HStack {
-                    Button(L.s("暂停", "Pause", model.language)) { model.pauseOrResume() }
-                    Button(L.s("跳过", "Skip", model.language)) { model.skipBreak() }
                 }
             }
 
@@ -172,7 +216,7 @@ public struct MenuPanelView: View {
         } label: {
             Text(L.s("退出", "Quit", model.language))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.62))
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.borderless)
@@ -184,9 +228,10 @@ public struct MenuPanelView: View {
                 .foregroundStyle(color)
             Text(value)
                 .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white)
             Text(label)
                 .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.white.opacity(0.62))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
@@ -194,6 +239,9 @@ public struct MenuPanelView: View {
     }
 
     private var statusLine: String {
+        if model.isRemindersPaused {
+            return L.s("明天自动恢复", "Resumes tomorrow", model.language)
+        }
         if model.engine.phase == .offDuty {
             if let next = SchedulePolicy.nextWorkStart(after: Date(), config: model.config) {
                 let formatter = DateFormatter()

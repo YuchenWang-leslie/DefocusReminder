@@ -18,13 +18,10 @@ final class ReminderPresenter {
         }
 
         let view = FloatingReminderView(model: model)
-            .frame(width: 280)
-            .padding(16)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-            .shadow(color: .black.opacity(0.18), radius: 16, y: 8)
+            .frame(width: 360)
 
         let hosting = NSHostingView(rootView: view)
-        hosting.frame = NSRect(x: 0, y: 0, width: 280, height: 230)
+        hosting.frame = NSRect(x: 0, y: 0, width: 360, height: 300)
 
         let panel = FloatingReminderPanel(
             contentRect: hosting.frame,
@@ -72,23 +69,30 @@ struct FloatingReminderView: View {
     @ObservedObject var model: AppModel
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 34, weight: .semibold))
-                .foregroundStyle(color)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(color.opacity(0.16))
+                    Image(systemName: icon)
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(color)
+                }
+                .frame(width: 52, height: 52)
 
-            VStack(spacing: 5) {
-                Text(title)
-                    .font(.headline)
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.white)
+                    Text(subtitle)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.72))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
             }
 
-            if model.engine.phase == .breaking || model.engine.phase == .breakPrompt {
-                recommendation
-            }
+            recommendation
 
             HStack(spacing: 10) {
                 ForEach(actions, id: \.title) { action in
@@ -97,28 +101,48 @@ struct FloatingReminderView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(action.tint)
+                    .controlSize(.large)
+                    .frame(minWidth: action.minWidth)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
+        .padding(18)
+        .background {
+            RoundedRectangle(cornerRadius: 18)
+                .fill(Color(red: 0.08, green: 0.09, blue: 0.11).opacity(0.92))
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18)
+                        .stroke(.white.opacity(0.16), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.34), radius: 22, y: 12)
+        }
+        .padding(10)
     }
 
     private var recommendation: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: model.currentRecommendation.icon)
-                .foregroundStyle(.green)
-                .frame(width: 18)
+                .foregroundStyle(.mint)
+                .frame(width: 22)
             VStack(alignment: .leading, spacing: 3) {
                 Text(model.currentRecommendation.title(language: model.language))
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
                 Text(model.currentRecommendation.detail(language: model.language))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.74))
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
-        .padding(10)
-        .background(.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .padding(12)
+        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(.white.opacity(0.10), lineWidth: 1)
+        )
     }
 
     private var icon: String {
@@ -180,6 +204,7 @@ struct FloatingReminderView: View {
         }
         return [
             FloatingAction(title: L.s("开始休息", "Start break", model.language), tint: .orange) { model.startBreak() },
+            FloatingAction(title: L.s("稍后", "Later", model.language), tint: .blue, minWidth: 70) { model.snoozeBreak() },
             FloatingAction(title: L.s("跳过", "Skip", model.language), tint: .gray) { model.skipBreak() },
         ]
     }
@@ -188,5 +213,6 @@ struct FloatingReminderView: View {
 private struct FloatingAction {
     let title: String
     let tint: Color
+    var minWidth: CGFloat = 84
     let perform: () -> Void
 }

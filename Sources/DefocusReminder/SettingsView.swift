@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct SettingsView: View {
     @ObservedObject var model: AppModel
+    @StateObject private var launchAtLogin = LaunchAtLoginController()
 
     public init(model: AppModel) {
         self.model = model
@@ -19,6 +20,17 @@ public struct SettingsView: View {
                 .tabItem { Label(L.s("数据", "Data", model.language), systemImage: "externaldrive") }
         }
         .padding(16)
+        .preferredColorScheme(.dark)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(red: 0.08, green: 0.09, blue: 0.12),
+                    Color(red: 0.13, green: 0.14, blue: 0.18),
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
     }
 
     private var planTab: some View {
@@ -89,6 +101,15 @@ public struct SettingsView: View {
             }
             .pickerStyle(.segmented)
 
+            Divider()
+            sectionTitle(L.s("菜单栏状态", "Menu bar status", model.language))
+            Picker("", selection: binding(\.menuBarDisplayMode)) {
+                ForEach(MenuBarDisplayMode.allCases) { mode in
+                    Text(mode.label(language: model.language)).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
             Toggle(isOn: binding(\.activityDetectionEnabled)) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L.s("休息期间检测操作", "Detect activity during breaks", model.language))
@@ -96,6 +117,35 @@ public struct SettingsView: View {
                 }
             }
             .toggleStyle(.switch)
+
+            Divider()
+            sectionTitle(L.s("系统体验", "System", model.language))
+            Toggle(isOn: Binding(
+                get: { launchAtLogin.isEnabled },
+                set: { launchAtLogin.setEnabled($0, language: model.language) }
+            )) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(L.s("开机启动", "Launch at login", model.language))
+                    helperText(L.s("开启后，登录 macOS 时自动启动提醒。", "Start reminders automatically when you log in to macOS.", model.language))
+                }
+            }
+            .toggleStyle(.switch)
+
+            if let error = launchAtLogin.errorMessage {
+                helperText(error)
+                    .foregroundStyle(.red.opacity(0.9))
+            }
+
+            Divider()
+            HStack {
+                Button(L.s("今日暂停提醒", "Pause today", model.language)) {
+                    model.pauseRemindersForToday()
+                }
+                Button(L.s("恢复提醒", "Resume reminders", model.language)) {
+                    model.resumeReminders()
+                }
+                .disabled(!model.isRemindersPaused)
+            }
 
             Spacer()
         }
@@ -161,7 +211,7 @@ public struct SettingsView: View {
                     color: .green
                 )
                 summaryPill(
-                    title: L.s("完成", "Done", model.language),
+                    title: L.s("循环", "Cycles", model.language),
                     value: "\(model.todaySummary.completedBreaks)",
                     color: .orange
                 )
